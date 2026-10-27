@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -59,6 +59,11 @@ export default function AddSongScreen({ artists, albums, onClose, onCreated }: P
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  // Artista/álbum novos já criados numa tentativa que falhou a meio.
+  // Ao tentar outra vez reutilizam-se, em vez de ficarem repetidos.
+  const createdArtist = useRef<{ name: string; id: number } | null>(null);
+  const createdAlbum = useRef<{ title: string; id: number } | null>(null);
 
   async function pickAudio() {
     try {
@@ -163,8 +168,15 @@ export default function AddSongScreen({ artists, albums, onClose, onCreated }: P
           return;
         }
 
-        const artist = await createArtist(newArtistName.trim());
-        finalArtistId = artist.id;
+        const name = newArtistName.trim();
+
+        if (createdArtist.current?.name === name) {
+          finalArtistId = createdArtist.current.id;
+        } else {
+          const artist = await createArtist(name);
+          createdArtist.current = { name, id: artist.id };
+          finalArtistId = artist.id;
+        }
       }
 
       // 2. Álbum: usa o escolhido, ou cria um novo.
@@ -177,15 +189,22 @@ export default function AddSongScreen({ artists, albums, onClose, onCreated }: P
           return;
         }
 
-        const year = Number(newAlbumYear);
-        const album = await createAlbum({
-          title: newAlbumTitle.trim(),
-          artist_id: finalArtistId,
-          cover_url: coverUrl || null,
-          release_year: Number.isFinite(year) && year > 1900 ? year : null,
-        });
+        const albumTitle = newAlbumTitle.trim();
 
-        finalAlbumId = album.id;
+        if (createdAlbum.current?.title === albumTitle) {
+          finalAlbumId = createdAlbum.current.id;
+        } else {
+          const year = Number(newAlbumYear);
+          const album = await createAlbum({
+            title: albumTitle,
+            artist_id: finalArtistId,
+            cover_url: coverUrl || null,
+            release_year: Number.isFinite(year) && year > 1900 ? year : null,
+          });
+
+          createdAlbum.current = { title: albumTitle, id: album.id };
+          finalAlbumId = album.id;
+        }
       }
 
       // 3. A música, já com tudo ligado.
