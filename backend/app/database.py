@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
@@ -14,6 +15,11 @@ if not DATABASE_URL:
         "A variável DATABASE_URL não foi definida no ficheiro .env"
     )
 
+
+# Certificado do fornecedor guardado no próprio projeto. Um certificado
+# de autoridade (CA) é público — serve para confirmar quem é o servidor —
+# por isso pode ir para o GitHub, ao contrário da palavra-passe.
+DEFAULT_CA = Path(__file__).resolve().parents[1] / "certs" / "ca.pem"
 
 # Valores que, numa opção de SSL do endereço, querem dizer "liga o SSL".
 _SSL_ON = {
@@ -65,9 +71,9 @@ def _split_ssl(query: dict, env_ca: str | None) -> tuple[dict, dict | None]:
 
     if wanted:
         raise RuntimeError(
-            "A base de dados pede SSL, mas falta o certificado: define "
-            "DATABASE_SSL_CA com o caminho do ca.pem do fornecedor "
-            "(no Render: /etc/secrets/ca.pem)."
+            "A base de dados pede SSL, mas falta o certificado: guarda o ca.pem "
+            "do fornecedor em backend/certs/ca.pem, ou define DATABASE_SSL_CA "
+            "com o caminho dele (no Render: /etc/secrets/ca.pem)."
         )
 
     return rest, None
@@ -85,13 +91,30 @@ def _prepare(url_text: str) -> tuple:
     if url.drivername == "mysql":
         url = url.set(drivername="mysql+pymysql")
 
-    query, ssl = _split_ssl(dict(url.query), os.getenv("DATABASE_SSL_CA"))
+    options = dict(url.query)
+
+    try:
+        query, ssl = _split_ssl(options, os.getenv("DATABASE_SSL_CA"))
+    except RuntimeError:
+        # Pediu SSL sem DATABASE_SSL_CA: usa o certificado guardado no
+        # projeto, se lá estiver. Só quando o SSL é pedido — o MySQL do
+        # teu PC continua a ligar sem SSL, mesmo com o ficheiro presente.
+        if not DEFAULT_CA.is_file():
+            raise
+        query, ssl = _split_ssl(options, str(DEFAULT_CA))
+
     url = url.set(query=query)
 
     connect_args: dict = {}
 
     # Com o certificado do fornecedor, a ligação é cifrada e verificada.
     if ssl:
+        # A variável aponta para um ficheiro que não existe (por exemplo, o
+        # Secret File não foi criado no Render)? Se o projeto tiver o
+        # certificado, usa esse.
+        if not os.path.isfile(ssl["ca"]) and DEFAULT_CA.is_file():
+            ssl = {"ca": str(DEFAULT_CA)}
+
         if not os.path.isfile(ssl["ca"]):
             raise RuntimeError(
                 f"Não encontrei o certificado em {ssl['ca']}. No Render, cria "

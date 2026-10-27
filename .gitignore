@@ -2,6 +2,8 @@
 backend/.env
 backend/storage/
 *.pem
+# ...exceto o certificado público do fornecedor da base de dados
+!backend/certs/ca.pem
 
 # --- Python ---
 **/__pycache__/
