@@ -1,0 +1,407 @@
+
+import { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  FlatList,
+  Image,
+  Pressable,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import {
+  useAudioPlayer,
+  useAudioPlayerStatus,
+} from "expo-audio";
+import { api, STORAGE_URL } from "./src/services/api";
+
+type Song = {
+  id: number;
+  title: string;
+  duration: number;
+  audio_url: string;
+  cover_url: string | null;
+  artist: { id: number; name: string } | null;
+  album: {
+    id: number;
+    title: string;
+    cover_url: string | null;
+  } | null;
+};
+
+function formatTime(seconds: number) {
+  const safeSeconds = Math.max(0, Math.floor(seconds || 0));
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainingSeconds = safeSeconds % 60;
+
+  return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
+}
+
+export default function App() {
+  const [songs, setSongs] = useState<Song[]>([]);
+  const [currentSong, setCurrentSong] = useState<Song | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const player = useAudioPlayer(null, {
+    updateInterval: 500,
+  });
+  const status = useAudioPlayerStatus(player);
+
+  useEffect(() => {
+    async function loadSongs() {
+      try {
+        const response = await api.get<Song[]>("/songs/");
+        setSongs(response.data);
+      } catch (err) {
+        console.error("Erro ao carregar músicas:", err);
+        setError("Não foi possível carregar as músicas.");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadSongs();
+  }, []);
+
+  function getMediaUrl(path: string | null) {
+    return path ? `${STORAGE_URL}${path}` : "";
+  }
+
+  function playSong(song: Song) {
+    try {
+      if (currentSong?.id === song.id) {
+        if (status.playing) {
+          player.pause();
+        } else {
+          if (status.duration > 0 && status.currentTime >= status.duration) {
+            player.seekTo(0);
+          }
+          player.play();
+        }
+        return;
+      }
+
+      setCurrentSong(song);
+
+      player.replace({
+        uri: getMediaUrl(song.audio_url),
+      });
+
+      player.play();
+    } catch (err) {
+      console.error("Erro ao reproduzir áudio:", err);
+      setError("Não foi possível reproduzir esta música.");
+    }
+  }
+
+  const duration = status.duration || currentSong?.duration || 0;
+  const progress =
+    duration > 0
+      ? Math.min(100, (status.currentTime / duration) * 100)
+      : 0;
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.logo}>MusicHub</Text>
+        <Text style={styles.subtitle}>
+          A tua música, num só lugar.
+        </Text>
+      </View>
+
+      <Text style={styles.sectionTitle}>As tuas músicas</Text>
+
+      {loading ? (
+        <ActivityIndicator size="large" color="#a78bfa" />
+      ) : error ? (
+        <Text style={styles.error}>{error}</Text>
+      ) : (
+        <FlatList
+          style={styles.songList}
+          data={songs}
+          keyExtractor={(item) => String(item.id)}
+          contentContainerStyle={styles.list}
+          ListEmptyComponent={
+            <Text style={styles.subtitle}>
+              Ainda não existem músicas.
+            </Text>
+          }
+          renderItem={({ item }) => {
+            const selected = currentSong?.id === item.id;
+
+            return (
+              <View style={styles.song}>
+                {item.cover_url ? (
+                  <Image
+                    source={{ uri: getMediaUrl(item.cover_url) }}
+                    style={styles.cover}
+                  />
+                ) : (
+                  <View style={[styles.cover, styles.placeholder]}>
+                    <Text style={styles.placeholderText}>♪</Text>
+                  </View>
+                )}
+
+                <View style={styles.songInfo}>
+                  <Text style={styles.songTitle} numberOfLines={1}>
+                    {item.title}
+                  </Text>
+                  <Text style={styles.artist} numberOfLines={1}>
+                    {item.artist?.name ?? "Artista desconhecido"}
+                  </Text>
+                  <Text style={styles.album} numberOfLines={1}>
+                    {item.album?.title ?? "Sem álbum"}
+                  </Text>
+                </View>
+
+                <Text style={styles.duration}>
+                  {formatTime(item.duration)}
+                </Text>
+
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    selected && status.playing
+                      ? `Pausar ${item.title}`
+                      : `Reproduzir ${item.title}`
+                  }
+                  style={styles.playButton}
+                  onPress={() => playSong(item)}
+                >
+                  <Text style={styles.playButtonText}>
+                    {selected && status.playing ? "Ⅱ" : "▶"}
+                  </Text>
+                </Pressable>
+              </View>
+            );
+          }}
+        />
+      )}
+
+      {currentSong && (
+        <View style={styles.playerPanel}>
+          <View style={styles.nowPlaying}>
+            {currentSong.cover_url ? (
+              <Image
+                source={{ uri: getMediaUrl(currentSong.cover_url) }}
+                style={styles.miniCover}
+              />
+            ) : (
+              <View style={[styles.miniCover, styles.placeholder]}>
+                <Text style={styles.placeholderText}>♪</Text>
+              </View>
+            )}
+
+            <View style={styles.nowPlayingInfo}>
+              <Text style={styles.nowPlayingLabel}>A tocar agora</Text>
+              <Text style={styles.nowPlayingTitle} numberOfLines={1}>
+                {currentSong.title}
+              </Text>
+              <Text style={styles.artist} numberOfLines={1}>
+                {currentSong.artist?.name ?? "Artista desconhecido"}
+              </Text>
+            </View>
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={status.playing ? "Pausar" : "Reproduzir"}
+              style={styles.mainPlayButton}
+              onPress={() => playSong(currentSong)}
+            >
+              <Text style={styles.mainPlayButtonText}>
+                {status.playing ? "Ⅱ" : "▶"}
+              </Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.progressTrack}>
+            <View
+              style={[styles.progressFill, { width: `${progress}%` }]}
+            />
+          </View>
+
+          <View style={styles.timeRow}>
+            <Text style={styles.timeText}>
+              {formatTime(status.currentTime)}
+            </Text>
+            <Text style={styles.timeText}>
+              {formatTime(duration)}
+            </Text>
+          </View>
+
+          {status.error ? (
+            <Text style={styles.error}>
+              Erro de reprodução: {status.error}
+            </Text>
+          ) : null}
+        </View>
+      )}
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#101014",
+    paddingHorizontal: 20,
+    paddingTop: 35,
+  },
+  header: {
+    marginBottom: 30,
+  },
+  logo: {
+    color: "#ffffff",
+    fontSize: 30,
+    fontWeight: "800",
+  },
+  subtitle: {
+    color: "#a1a1aa",
+    fontSize: 14,
+    marginTop: 6,
+  },
+  sectionTitle: {
+    color: "#ffffff",
+    fontSize: 21,
+    fontWeight: "700",
+    marginBottom: 18,
+  },
+  songList: {
+    flex: 1,
+  },
+  list: {
+    paddingBottom: 20,
+  },
+  song: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 14,
+    padding: 10,
+    borderRadius: 14,
+    backgroundColor: "#1c1c24",
+  },
+  cover: {
+    width: 56,
+    height: 56,
+    borderRadius: 9,
+    backgroundColor: "#30303b",
+  },
+  placeholder: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  placeholderText: {
+    color: "#a78bfa",
+    fontSize: 28,
+  },
+  songInfo: {
+    flex: 1,
+    marginLeft: 10,
+    marginRight: 6,
+  },
+  songTitle: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  artist: {
+    color: "#c4b5fd",
+    marginTop: 4,
+    fontSize: 12,
+  },
+  album: {
+    color: "#a1a1aa",
+    marginTop: 3,
+    fontSize: 11,
+  },
+  duration: {
+    color: "#a1a1aa",
+    fontSize: 11,
+    marginRight: 8,
+  },
+  playButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 20,
+    backgroundColor: "#a78bfa",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  playButtonText: {
+    color: "#17131f",
+    fontSize: 17,
+    fontWeight: "800",
+  },
+  playerPanel: {
+    backgroundColor: "#22212c",
+    borderRadius: 18,
+    padding: 14,
+    marginTop: 10,
+    marginBottom: 12,
+  },
+  nowPlaying: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  miniCover: {
+    width: 50,
+    height: 50,
+    borderRadius: 8,
+    backgroundColor: "#30303b",
+  },
+  nowPlayingInfo: {
+    flex: 1,
+    marginHorizontal: 12,
+  },
+  nowPlayingLabel: {
+    color: "#a78bfa",
+    fontSize: 11,
+    marginBottom: 4,
+  },
+  nowPlayingTitle: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  mainPlayButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#a78bfa",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mainPlayButtonText: {
+    color: "#17131f",
+    fontSize: 20,
+    fontWeight: "800",
+  },
+  progressTrack: {
+    height: 4,
+    backgroundColor: "#454451",
+    borderRadius: 4,
+    marginTop: 16,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: 4,
+    backgroundColor: "#a78bfa",
+    borderRadius: 4,
+  },
+  timeRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 7,
+  },
+  timeText: {
+    color: "#a1a1aa",
+    fontSize: 11,
+  },
+  error: {
+    color: "#f87171",
+    fontSize: 13,
+    marginTop: 10,
+  },
+});

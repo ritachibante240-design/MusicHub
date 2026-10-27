@@ -1,0 +1,17 @@
+# --- Segredos e dados locais: nunca vão para o GitHub ---
+backend/.env
+backend/storage/
+*.pem
+
+# --- Python ---
+**/__pycache__/
+*.pyc
+.venv/
+venv/
+
+# --- Frontend (o resto está em frontend/.gitignore) ---
+frontend/node_modules/
+frontend/.expo/
+
+# --- Definições locais do Claude ---
+**/.claude/settings.local.json

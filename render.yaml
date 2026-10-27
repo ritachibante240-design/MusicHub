@@ -1,0 +1,34 @@
+# Como o Render publica o backend do MusicHub (plano gratuito).
+# Os valores marcados "sync: false" são pedidos pelo Render na criação
+# e nunca ficam escritos aqui — este ficheiro vai para o GitHub.
+services:
+  - type: web
+    name: musichub-api
+    runtime: python
+    plan: free
+    # Frankfurt é a região do Render mais perto de Moçambique.
+    region: frankfurt
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.13.5"
+      # MySQL do Aiven (cola o "Service URI" tal como o Aiven o dá).
+      - key: DATABASE_URL
+        sync: false
+      # Certificado do Aiven, carregado no Render como Secret File "ca.pem".
+      - key: DATABASE_SSL_CA
+        value: /etc/secrets/ca.pem
+      # Ficheiros (MP3 e capas) num bucket compatível com S3.
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ENDPOINT_URL
+        sync: false
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_PUBLIC_BASE_URL
+        sync: false

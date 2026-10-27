@@ -1,0 +1,12 @@
+# Pacotes do backend do MusicHub (o Render instala-os com
+# "pip install -r requirements.txt"; localmente também serve).
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9   # receber ficheiros (UploadFile)
+sqlalchemy>=2.0
+pymysql>=1.1              # ligação ao MySQL
+cryptography>=42          # autenticação do MySQL 8 (Aiven e versões recentes)
+python-dotenv>=1.0        # ler o .env
+mutagen>=1.47             # duração dos MP3
+pillow>=10                # cor dominante das capas
+boto3>=1.34               # guardar ficheiros na nuvem (padrão S3)
