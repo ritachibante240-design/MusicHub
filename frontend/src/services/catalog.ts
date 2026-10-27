@@ -1,3 +1,5 @@
+import { Platform } from "react-native";
+
 import { api } from "./api";
 import type { Album } from "../types/album";
 import type { Artist } from "../types/artist";
@@ -20,29 +22,48 @@ export type PickedFile = {
 // O upload de um ficheiro grande demora mais do que um pedido normal.
 const UPLOAD_TIMEOUT = 120000;
 
-function toFormData(file: PickedFile) {
+const isWeb = Platform.OS === "web";
+
+async function toFormData(file: PickedFile) {
   const form = new FormData();
 
-  // Em React Native, um ficheiro é enviado como {uri, name, type}.
-  form.append("file", file as unknown as Blob);
+  if (isWeb) {
+    // No browser, {uri, name, type} chegava ao servidor como o texto
+    // "[object Object]". Lá é preciso ler o ficheiro e enviá-lo como Blob,
+    // com o tipo e o nome certos — o servidor valida os dois.
+    const original = await (await fetch(file.uri)).blob();
+    const blob = original.slice(0, original.size, file.type);
+
+    (form as unknown as { append(name: string, value: Blob, filename: string): void })
+      .append("file", blob, file.name);
+  } else {
+    // Em React Native, um ficheiro é enviado como {uri, name, type}.
+    form.append("file", file as unknown as Blob);
+  }
 
   return form;
 }
 
+// No browser, o próprio browser escreve o cabeçalho multipart (com a
+// fronteira entre partes); escrevê-lo à mão estragava o pedido.
+const UPLOAD_HEADERS = isWeb ? undefined : { "Content-Type": "multipart/form-data" };
+
 export async function uploadAudio(file: PickedFile) {
-  const { data } = await api.post<UploadResult>("/uploads/audio", toFormData(file), {
-    headers: { "Content-Type": "multipart/form-data" },
-    timeout: UPLOAD_TIMEOUT,
-  });
+  const { data } = await api.post<UploadResult>(
+    "/uploads/audio",
+    await toFormData(file),
+    { headers: UPLOAD_HEADERS, timeout: UPLOAD_TIMEOUT }
+  );
 
   return data;
 }
 
 export async function uploadCover(file: PickedFile) {
-  const { data } = await api.post<UploadResult>("/uploads/cover", toFormData(file), {
-    headers: { "Content-Type": "multipart/form-data" },
-    timeout: UPLOAD_TIMEOUT,
-  });
+  const { data } = await api.post<UploadResult>(
+    "/uploads/cover",
+    await toFormData(file),
+    { headers: UPLOAD_HEADERS, timeout: UPLOAD_TIMEOUT }
+  );
 
   return data;
 }

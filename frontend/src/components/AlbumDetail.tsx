@@ -2,7 +2,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRef, useState } from "react";
 import {
-  Alert,
   Animated,
   FlatList,
   Pressable,
@@ -22,6 +21,7 @@ import { usePlayer } from "../player/PlayerContext";
 import { deleteAlbum, describeError } from "../services/catalog";
 import { colors, seedColor } from "../theme/colors";
 import { display } from "../theme/typography";
+import { confirmDestructive } from "../utils/confirm";
 import type { Album } from "../types/album";
 import type { Song } from "../types/song";
 import { formatDuration } from "../utils/media";
@@ -64,26 +64,20 @@ export default function AlbumDetail({
     .join(" · ");
 
   function confirmDelete() {
-    Alert.alert(
+    confirmDestructive(
       "Apagar o álbum?",
       "As músicas não são apagadas: apenas deixam de pertencer a este álbum.",
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Apagar",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await deleteAlbum(album.id);
-              onDeleted();
-              onBack();
-            } catch (err) {
-              console.error("Erro ao apagar o álbum:", err);
-              setError(describeError(err, "Não foi possível apagar o álbum."));
-            }
-          },
-        },
-      ]
+      "Apagar",
+      async () => {
+        try {
+          await deleteAlbum(album.id);
+          onDeleted();
+          onBack();
+        } catch (err) {
+          console.error("Erro ao apagar o álbum:", err);
+          setError(describeError(err, "Não foi possível apagar o álbum."));
+        }
+      }
     );
   }
 

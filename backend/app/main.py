@@ -60,7 +60,9 @@ app.include_router(covers_router)
 app.include_router(favorites_router)
 
 
-@app.get("/")
+# GET e HEAD: o Render verifica o servidor com pedidos HEAD, que antes
+# davam "405 Method Not Allowed" no registo.
+@app.api_route("/", methods=["GET", "HEAD"])
 def root():
     return {
         "message": "MusicHub API está a funcionar"

@@ -2,7 +2,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert,
   Animated,
   FlatList,
   Modal,
@@ -32,6 +31,7 @@ import {
 } from "../services/catalog";
 import { colors, seedColor } from "../theme/colors";
 import { display } from "../theme/typography";
+import { confirmDestructive } from "../utils/confirm";
 import type { PlaylistDetailData } from "../types/playlist";
 import type { Song } from "../types/song";
 import { formatDuration } from "../utils/media";
@@ -140,26 +140,20 @@ export default function PlaylistDetail({
   }
 
   function confirmDelete() {
-    Alert.alert(
+    confirmDestructive(
       "Apagar a playlist?",
       "As músicas não são apagadas: só deixam de estar nesta playlist.",
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Apagar",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await deletePlaylist(playlistId);
-              onChanged();
-              onBack();
-            } catch (err) {
-              console.error("Erro ao apagar a playlist:", err);
-              setError(describeError(err, "Não foi possível apagar a playlist."));
-            }
-          },
-        },
-      ]
+      "Apagar",
+      async () => {
+        try {
+          await deletePlaylist(playlistId);
+          onChanged();
+          onBack();
+        } catch (err) {
+          console.error("Erro ao apagar a playlist:", err);
+          setError(describeError(err, "Não foi possível apagar a playlist."));
+        }
+      }
     );
   }
 

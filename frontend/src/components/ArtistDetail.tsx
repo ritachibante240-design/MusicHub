@@ -3,7 +3,6 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   FlatList,
   Image,
@@ -29,6 +28,7 @@ import {
 } from "../services/catalog";
 import { colors, seedColor } from "../theme/colors";
 import { display } from "../theme/typography";
+import { confirmDestructive } from "../utils/confirm";
 import type { Album } from "../types/album";
 import type { Song } from "../types/song";
 import { formatDuration, getMediaUrl } from "../utils/media";
@@ -96,26 +96,20 @@ export default function ArtistDetail({
   function confirmDelete() {
     if (!isReal) return;
 
-    Alert.alert(
+    confirmDestructive(
       "Apagar o artista?",
       "As músicas e os álbuns não são apagados: apenas ficam sem artista.",
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Apagar",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await deleteArtist(artistId);
-              onUpdated();
-              onBack();
-            } catch (err) {
-              console.error("Erro ao apagar o artista:", err);
-              setError(describeError(err, "Não foi possível apagar o artista."));
-            }
-          },
-        },
-      ]
+      "Apagar",
+      async () => {
+        try {
+          await deleteArtist(artistId);
+          onUpdated();
+          onBack();
+        } catch (err) {
+          console.error("Erro ao apagar o artista:", err);
+          setError(describeError(err, "Não foi possível apagar o artista."));
+        }
+      }
     );
   }
 

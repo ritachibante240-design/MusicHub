@@ -15,33 +15,91 @@ if not DATABASE_URL:
     )
 
 
+# Valores que, numa opção de SSL do endereço, querem dizer "liga o SSL".
+_SSL_ON = {
+    "1", "true", "yes", "on", "required", "require",
+    "verify_ca", "verify-ca", "verify_identity", "verify-identity", "verify-full",
+}
+
+
+def _first(value) -> str:
+    # No endereço, uma opção repetida chega como tuplo.
+    if isinstance(value, (tuple, list)):
+        value = value[0] if value else ""
+    return str(value).strip()
+
+
+def _split_ssl(query: dict, env_ca: str | None) -> tuple[dict, dict | None]:
+    """Separa as opções de SSL do resto do endereço.
+
+    Opções como "ssl=true" ou "ssl-mode=REQUIRED" não podem seguir no
+    endereço: o PyMySQL espera-as noutra forma e falha com
+    "'str' object has no attribute 'get'". Por isso saem todas daqui e o
+    SSL é configurado de uma só maneira: com o certificado do fornecedor.
+
+    Devolve (o resto das opções, a configuração ssl para o PyMySQL ou None).
+    """
+    rest: dict = {}
+    wanted = False
+    url_ca = None
+
+    for key, value in query.items():
+        name = key.lower().replace("-", "_")
+
+        if not name.startswith("ssl"):
+            rest[key] = value
+            continue
+
+        text = _first(value)
+
+        if name in ("ssl", "ssl_mode") and text.lower() in _SSL_ON:
+            wanted = True
+        elif name == "ssl_ca" and text:
+            url_ca = text
+            wanted = True
+
+    ca_file = env_ca or url_ca
+
+    if ca_file:
+        return rest, {"ca": ca_file}
+
+    if wanted:
+        raise RuntimeError(
+            "A base de dados pede SSL, mas falta o certificado: define "
+            "DATABASE_SSL_CA com o caminho do ca.pem do fornecedor "
+            "(no Render: /etc/secrets/ca.pem)."
+        )
+
+    return rest, None
+
+
 def _prepare(url_text: str) -> tuple:
     """Aceita o endereço tal como os serviços na nuvem o dão.
 
     O Aiven, por exemplo, dá "mysql://...?ssl-mode=REQUIRED": o "mysql://"
-    não diz que biblioteca usar e o "ssl-mode" não é percebido pelo
-    PyMySQL. Aqui ficam os dois resolvidos. Localmente nada muda.
+    não diz que biblioteca usar e as opções de SSL não são percebidas pelo
+    PyMySQL nessa forma. Aqui fica tudo resolvido. Localmente nada muda.
     """
     url = make_url(url_text)
 
     if url.drivername == "mysql":
         url = url.set(drivername="mysql+pymysql")
 
-    query = dict(url.query)
-    ssl_mode = query.pop("ssl-mode", None) or query.pop("ssl_mode", None)
+    query, ssl = _split_ssl(dict(url.query), os.getenv("DATABASE_SSL_CA"))
     url = url.set(query=query)
 
     connect_args: dict = {}
-    ca_file = os.getenv("DATABASE_SSL_CA")
 
     # Com o certificado do fornecedor, a ligação é cifrada e verificada.
-    if ca_file:
-        connect_args["ssl"] = {"ca": ca_file}
-    elif ssl_mode and str(ssl_mode).upper() not in ("DISABLED", "PREFERRED"):
-        raise RuntimeError(
-            "A base de dados exige SSL: define DATABASE_SSL_CA com o caminho "
-            "do certificado (ca.pem) do fornecedor."
-        )
+    if ssl:
+        if not os.path.isfile(ssl["ca"]):
+            raise RuntimeError(
+                f"Não encontrei o certificado em {ssl['ca']}. No Render, cria "
+                "um Secret File chamado exatamente ca.pem com o certificado "
+                "do Aiven."
+            )
+
+        connect_args["ssl"] = ssl
 
     return url, connect_args
 
