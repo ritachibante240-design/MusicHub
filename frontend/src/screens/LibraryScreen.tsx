@@ -24,13 +24,19 @@ import AddArtistScreen from "./AddArtistScreen";
 import AddSongScreen from "./AddSongScreen";
 import { usePlayer } from "../player/PlayerContext";
 import { api } from "../services/api";
-import { createPlaylist, describeError, listPlaylists } from "../services/catalog";
+import {
+  createPlaylist,
+  deleteSong,
+  describeError,
+  listPlaylists,
+} from "../services/catalog";
 import { colors } from "../theme/colors";
 import { display } from "../theme/typography";
 import type { Album } from "../types/album";
 import type { Artist } from "../types/artist";
 import type { Playlist } from "../types/playlist";
 import type { Song } from "../types/song";
+import { confirmDestructive, notify } from "../utils/confirm";
 import { getArtistName } from "../utils/media";
 
 type Props = {
@@ -66,7 +72,7 @@ export default function LibraryScreen({
   initialDetail,
   onInitialDetailUsed,
 }: Props) {
-  const { currentSong } = usePlayer();
+  const { currentSong, removeFromQueue } = usePlayer();
   const [songs, setSongs] = useState<Song[]>([]);
   const [artists, setArtists] = useState<Artist[]>([]);
   const [albums, setAlbums] = useState<Album[]>([]);
@@ -78,6 +84,8 @@ export default function LibraryScreen({
 
   const [detail, setDetail] = useState<Detail>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  // Música cujo menu (⋮) está aberto.
+  const [songMenu, setSongMenu] = useState<Song | null>(null);
   const [addingSong, setAddingSong] = useState(false);
   const [addingArtist, setAddingArtist] = useState(false);
   const [creatingPlaylist, setCreatingPlaylist] = useState(false);
@@ -207,6 +215,47 @@ export default function LibraryScreen({
       onPress: () => setCreatingPlaylist(true),
     },
   ];
+
+  function askDeleteSong(song: Song) {
+    confirmDestructive(
+      "Apagar a música?",
+      `"${song.title}" sai do catálogo, das playlists e dos favoritos. Não dá para desfazer.`,
+      "Apagar",
+      () => void removeSong(song)
+    );
+  }
+
+  async function removeSong(song: Song) {
+    try {
+      await deleteSong(song.id);
+      // Se estava na fila (e não é a que toca agora), deixa de estar.
+      removeFromQueue(song.id);
+      setSongs((list) => list.filter((item) => item.id !== song.id));
+      void loadLibrary();
+    } catch (err) {
+      console.error("Erro ao apagar a música:", err);
+      notify(
+        "Não foi possível apagar",
+        describeError(err, "Tenta outra vez daqui a pouco.")
+      );
+    }
+  }
+
+  const songMenuOptions: SheetOption[] = songMenu
+    ? [
+        {
+          icon: "trash-outline",
+          title: "Apagar música",
+          description: "Remove-a do catálogo para toda a gente",
+          // Espera o painel fechar antes da pergunta (no iOS um alerta
+          // aberto durante a animação do painel pode não aparecer).
+          onPress: () => {
+            const target = songMenu;
+            setTimeout(() => askDeleteSong(target), 250);
+          },
+        },
+      ]
+    : [];
 
   // ----- ecrãs que substituem a biblioteca -----
 
@@ -428,6 +477,7 @@ export default function LibraryScreen({
     onPress: () => void;
     // Só as músicas têm; serve para marcar a que está a tocar.
     songId?: number;
+    song?: Song;
   };
 
   const entries: Entry[] =
@@ -440,6 +490,7 @@ export default function LibraryScreen({
           cover: song.cover_url,
           seed: song.id,
           songId: song.id,
+          song,
           onPress: () => onSelectSong(song, songs, "biblioteca"),
         }))
       : activeTab === "Artistas"
@@ -501,6 +552,7 @@ export default function LibraryScreen({
           grid ? (
             <Pressable
               onPress={item.onPress}
+              onLongPress={item.song ? () => setSongMenu(item.song ?? null) : undefined}
               style={({ pressed }) => [styles.gridItem, pressed && styles.pressed]}
               accessibilityRole="button"
               accessibilityLabel={item.title}
@@ -522,6 +574,7 @@ export default function LibraryScreen({
           ) : (
             <Pressable
               onPress={item.onPress}
+              onLongPress={item.song ? () => setSongMenu(item.song ?? null) : undefined}
               style={({ pressed }) => [styles.row, pressed && styles.pressed]}
               accessibilityRole="button"
               accessibilityLabel={item.title}
@@ -550,7 +603,22 @@ export default function LibraryScreen({
                   color={colors.textTertiary}
                 />
               ) : (
-                item.songId === currentSong?.id && <PlayingBars />
+                <>
+                  {item.songId === currentSong?.id && <PlayingBars />}
+                  <Pressable
+                    onPress={() => setSongMenu(item.song ?? null)}
+                    hitSlop={8}
+                    style={({ pressed }) => [styles.moreButton, pressed && styles.pressed]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Opções: ${item.title}`}
+                  >
+                    <Ionicons
+                      name="ellipsis-vertical"
+                      size={18}
+                      color={colors.textTertiary}
+                    />
+                  </Pressable>
+                </>
               )}
             </Pressable>
           )
@@ -561,6 +629,12 @@ export default function LibraryScreen({
         visible={sheetOpen}
         options={sheetOptions}
         onClose={() => setSheetOpen(false)}
+      />
+
+      <ActionSheet
+        visible={songMenu !== null}
+        options={songMenuOptions}
+        onClose={() => setSongMenu(null)}
       />
 
       <NamePrompt
@@ -586,6 +660,13 @@ const styles = StyleSheet.create({
   },
   flex: {
     flex: 1,
+  },
+  moreButton: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: -8,
   },
   list: {
     paddingHorizontal: 20,

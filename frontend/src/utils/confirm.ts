@@ -21,3 +21,14 @@ export function confirmDestructive(
     { text: confirmLabel, style: "destructive", onPress: onConfirm },
   ]);
 }
+
+// Aviso simples (por exemplo, quando apagar falha). Mesma ideia: na web
+// o Alert do React Native não aparece, por isso usa-se o do browser.
+export function notify(title: string, message: string) {
+  if (Platform.OS === "web") {
+    (globalThis as { alert?: (text: string) => void }).alert?.(`${title}\n\n${message}`);
+    return;
+  }
+
+  Alert.alert(title, message);
+}
