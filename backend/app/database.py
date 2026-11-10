@@ -2,18 +2,18 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, text
-from sqlalchemy.engine import make_url
+from sqlalchemy import create_engine, event, text
+from sqlalchemy.engine import URL, make_url
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+# Com DATABASE_URL (no Render: o MySQL do Aiven) usa-se essa base de dados.
+# Sem ela (no PC, sem .env) usa-se um ficheiro SQLite dentro de backend/,
+# criado sozinho: não é preciso instalar nem configurar MySQL para testar.
+DATABASE_URL = (os.getenv("DATABASE_URL") or "").strip()
 
-if not DATABASE_URL:
-    raise RuntimeError(
-        "A variável DATABASE_URL não foi definida no ficheiro .env"
-    )
+SQLITE_PATH = Path(__file__).resolve().parents[1] / "musichub.db"
 
 
 # Certificado do fornecedor guardado no próprio projeto. Um certificado
@@ -79,6 +79,12 @@ def _split_ssl(query: dict, env_ca: str | None) -> tuple[dict, dict | None]:
     return rest, None
 
 
+def _prepare_sqlite(url: URL) -> tuple:
+    # O FastAPI usa a mesma ligação em várias threads; o SQLite, por
+    # defeito, recusa isso.
+    return url, {"check_same_thread": False}
+
+
 def _prepare(url_text: str) -> tuple:
     """Aceita o endereço tal como os serviços na nuvem o dão.
 
@@ -87,6 +93,10 @@ def _prepare(url_text: str) -> tuple:
     PyMySQL nessa forma. Aqui fica tudo resolvido. Localmente nada muda.
     """
     url = make_url(url_text)
+
+    # Também se pode escolher o SQLite explicitamente (sqlite:///...).
+    if url.get_backend_name() == "sqlite":
+        return _prepare_sqlite(url)
 
     if url.drivername == "mysql":
         url = url.set(drivername="mysql+pymysql")
@@ -127,7 +137,14 @@ def _prepare(url_text: str) -> tuple:
     return url, connect_args
 
 
-_url, _connect_args = _prepare(DATABASE_URL)
+if DATABASE_URL:
+    _url, _connect_args = _prepare(DATABASE_URL)
+else:
+    _url, _connect_args = _prepare_sqlite(
+        URL.create("sqlite", database=str(SQLITE_PATH))
+    )
+
+IS_SQLITE = _url.get_backend_name() == "sqlite"
 
 engine = create_engine(
     _url,
@@ -136,6 +153,17 @@ engine = create_engine(
     # Bases de dados na nuvem fecham ligações paradas; renovamos antes.
     pool_recycle=280,
 )
+
+if IS_SQLITE:
+    # O SQLite só respeita as chaves estrangeiras (ON DELETE CASCADE e
+    # SET NULL) com esta opção ligada, em cada ligação. Sem ela, apagar
+    # uma música ou playlist deixaria linhas soltas em playlist_songs —
+    # o MySQL faz isto sempre, por isso aqui fica igual.
+    @event.listens_for(engine, "connect")
+    def _enable_foreign_keys(dbapi_connection, _record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 SessionLocal = sessionmaker(
     bind=engine,
@@ -158,6 +186,12 @@ def get_db():
 
 
 def test_connection():
+    if IS_SQLITE:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        print("Base de dados ligada: SQLite em", _url.database)
+        return
+
     with engine.connect() as connection:
         result = connection.execute(text("SELECT DATABASE()"))
         print("Base de dados ligada:", result.scalar())

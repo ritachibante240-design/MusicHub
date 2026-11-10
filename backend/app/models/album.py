@@ -1,4 +1,4 @@
-from sqlalchemy import ForeignKey, String, TIMESTAMP, text
+from sqlalchemy import ForeignKey, Integer, String, TIMESTAMP, text
 from sqlalchemy.dialects.mysql import YEAR
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -11,7 +11,11 @@ class Album(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     cover_url: Mapped[str | None] = mapped_column(String(500))
-    release_year: Mapped[int | None] = mapped_column(YEAR)
+    # YEAR só existe no MySQL; no SQLite (base local) guarda-se como número.
+    # No MySQL a coluna continua exatamente igual.
+    release_year: Mapped[int | None] = mapped_column(
+        YEAR().with_variant(Integer(), "sqlite")
+    )
     artist_id: Mapped[int | None] = mapped_column(
         ForeignKey("artists.id", ondelete="SET NULL")
     )
